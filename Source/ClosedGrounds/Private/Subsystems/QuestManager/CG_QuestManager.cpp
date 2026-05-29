@@ -4,508 +4,194 @@
 #include "Subsystems/QuestManager/CG_QuestManager.h"
 
 #include "GameplayTagContainer.h"
-#include "Actors/Spawners/CG_SpawnerBase.h"
-#include "Algo/RandomShuffle.h"
 #include "ClosedGrounds/ClosedGrounds.h"
 #include "Engine/AssetManager.h"
 #include "Game/CG_GameInstance.h"
-#include "Kismet/GameplayStatics.h"
-#include "Subsystems/CG_AssetManager.h"
-#include "Subsystems/DayManager/CG_DayManager.h"
 #include "Subsystems/QuestManager/Data/CG_QuestData.h"
-#include "Subsystems/QuestManager/Data/FCG_ActiveQuest.h"
-#include "Subsystems/QuestManager/Data/FCG_QuestObjective.h"
+#include "Subsystems/QuestManager/Data/FCG_QuestState.h"
+#include "Subsystems/QuestManager/Data/FCG_ObjectiveState.h"
 
 void UCG_QuestManager::InitializeQuestSystem()
 {
+	const UCG_GameInstance* GameInstance = Cast<UCG_GameInstance>(GetGameInstance());
+	checkf(GameInstance, TEXT("[%hs] - GameInstance isn't UCG_GameInstance!"), __FUNCTION__);
+	
 	if (!UAssetManager::IsInitialized())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("AssetManager not initialized yet!"));
+		UE_LOG(LogQuestManager, Error, TEXT("[%hs] - AssetManager isn't initialized yet!"), __FUNCTION__);
 		return;
 	}
 	
-	UE_LOG(LogTemp, Warning, TEXT("QuestSubsystem: InitializeQuestSystem START"));
-
-	UAssetManager& Manager = UCG_AssetManager::Get();
+	TArray<FPrimaryAssetId> QuestPrimaryAssets;
+	UAssetManager::Get().GetPrimaryAssetIdList(FPrimaryAssetType("Quest"), QuestPrimaryAssets);
 	
-	TArray<FPrimaryAssetId> DebugIds;
-	Manager.GetPrimaryAssetIdList(UCG_AssetManager::QuestType, DebugIds);
-
-	UE_LOG(LogTemp, Warning, TEXT("Quest Assets Found: %d"), DebugIds.Num());
-
-	for (auto& Id : DebugIds)
+	if (QuestPrimaryAssets.IsEmpty())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Asset: %s"), *Id.ToString());
-	}
-
-	// 🔹 1. Pobierz wszystkie Quest assety
-	Manager.GetPrimaryAssetIdList(UCG_AssetManager::QuestType, QuestAssetIds);
-
-	if (QuestAssetIds.Num() == 0)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("No quest assets found!"));
-		OnQuestSystemReady.Broadcast();
+		UE_LOG(LogQuestManager, Warning, TEXT("[%hs] - There aren't quests to load from Asset Manager!"), __FUNCTION__);
 		return;
 	}
+	
+	UE_LOG(LogQuestManager, Log, TEXT("[%hs] - Loading %d quest assets..."), __FUNCTION__, QuestPrimaryAssets.Num());
 
-	// 🔹 2. Async load
-	FStreamableDelegate Delegate = FStreamableDelegate::CreateUObject(
-		this,
-		&UCG_QuestManager::OnAssetsLoaded
-	);
-
-	Manager.LoadPrimaryAssets(QuestAssetIds, TArray<FName>(), Delegate);
-
-	UE_LOG(LogTemp, Warning, TEXT("Loading %d quest assets..."), QuestAssetIds.Num());
+	const FStreamableDelegate OnAsyncAssetsLoadedDelegate = FStreamableDelegate::CreateUObject(this, &UCG_QuestManager::CacheLoadedQuests);
+	UAssetManager::Get().LoadPrimaryAssets(QuestPrimaryAssets, TArray<FName>(), OnAsyncAssetsLoadedDelegate);
 }
 
-void UCG_QuestManager::DrawQuests()
+void UCG_QuestManager::CacheLoadedQuests()
 {
-	const UCG_GameInstance* GameInstance = Cast<UCG_GameInstance>(GetGameInstance());
-    if (!GameInstance)
-    {
-        return;
-    }
+	UE_LOG(LogQuestManager, Log, TEXT("[%hs] - Quests have been loaded!"), __FUNCTION__);
+	
+	TArray<UObject*> ObjectList;
+	UAssetManager::Get().GetPrimaryAssetObjectList(FPrimaryAssetType("Quest"), ObjectList);
 
-    // Get all quest IDs from Asset Manager
-    TArray<FPrimaryAssetId> QuestIDs;
-    UAssetManager::Get().GetPrimaryAssetIdList(FPrimaryAssetType("Quest"), QuestIDs);
-
-    if (QuestIDs.IsEmpty())
-    {
-        UE_LOG(LogQuestManager, Error, TEXT("[%hs] - There aren't quests to load!"), __FUNCTION__);
-        return;
-    }
-
-    UE_LOG(LogQuestManager, Log, TEXT("[%hs] - Quests found: %d"), __FUNCTION__, QuestIDs.Num());
-
-    // Shuffle
-    TArray<FPrimaryAssetId> ShuffledQuestArray = QuestIDs;
-    Algo::RandomShuffle(ShuffledQuestArray);
-
-    UAssetManager& AssetManager = UAssetManager::Get();
-
-    RemainingQuests.Reset();
-
-    // Ile questów chcemy wylosować (docelowo do settingsów)
-    const int32 NumQuestsToDraw = FMath::Min(2, ShuffledQuestArray.Num());
-
-    // Weak pointer dla bezpieczeństwa (async)
-    TWeakObjectPtr<UCG_QuestManager> WeakThis(this);
-
-	TSharedRef<int32> PendingLoads = MakeShared<int32>(NumQuestsToDraw);
-
-    for (int32 QuestIndex = 0; QuestIndex < NumQuestsToDraw; ++QuestIndex)
-    {
-        const FPrimaryAssetId QuestID = ShuffledQuestArray[QuestIndex];
-
-    	UCG_QuestData* Existing = Cast<UCG_QuestData>(
-	AssetManager.GetPrimaryAssetObject(QuestID));
-    	
-    	if (Existing)
-    	{
-    		UE_LOG(LogQuestManager, Warning, TEXT("Already loaded: %s"), *QuestID.ToString());
-
-    		RemainingQuests.Add(Existing);
-
-    		(*PendingLoads)--;
-
-    		if (*PendingLoads == 0)
-    		{
-    			UE_LOG(LogQuestManager, Log, TEXT("All quests loaded (sync path). Activating... (%d)"), RemainingQuests.Num());
-
-    			for (UCG_QuestData* LoadedQuest : RemainingQuests)
-    			{
-    				ActivateQuests(LoadedQuest);
-    			}
-
-    			FOnLoadedAllQuests.Broadcast();
-    		}
-
-    		continue;
-    	}
-    	
-    	FSoftObjectPath Path = AssetManager.GetPrimaryAssetPath(QuestID);
-
-    	UE_LOG(LogQuestManager, Warning, TEXT("Path: %s"), *Path.ToString());
-    	
-    	UE_LOG(LogQuestManager, Warning, TEXT("Requesting load for: %s"), *QuestID.ToString());
-        AssetManager.LoadPrimaryAsset(
-            QuestID,
-            {},
-            FStreamableDelegate::CreateLambda([WeakThis, QuestID, PendingLoads]()
-            {
-            	UE_LOG(LogQuestManager, Warning, TEXT("Lambda fired for QuestID: %s"), *QuestID.ToString());
-                if (!WeakThis.IsValid())
-                {
-                	UE_LOG(LogQuestManager, Error, TEXT("QuestManager destroyed before load finished"));
-                    return;
-                }
-
-                UCG_QuestManager* Self = WeakThis.Get();
-                UAssetManager& AM = UAssetManager::Get();
-
-                UCG_QuestData* QuestData = Cast<UCG_QuestData>(
-                    AM.GetPrimaryAssetObject(QuestID)
-                );
-            	
-                if (IsValid(QuestData))
-                {
-                    Self->RemainingQuests.Add(QuestData);
-
-                    UE_LOG(LogQuestManager, Log, TEXT("Loaded quest: %s"), *QuestData->QuestName.ToString());
-                }
-                else
-                {
-                    UE_LOG(LogQuestManager, Warning, TEXT("Failed to load quest for ID: %s"), *QuestID.ToString());
-                }
-            	
-            	(*PendingLoads)--;
-            	
-
-if (*PendingLoads == 0)
-{
-	UE_LOG(LogQuestManager, Log, TEXT("All quests loaded. Activating... (%d)"), Self->RemainingQuests.Num());
-
-	for (UCG_QuestData* LoadedQuest : Self->RemainingQuests)
+	for (UObject* Element : ObjectList)
 	{
-		Self->ActivateQuests(LoadedQuest);
+		AllQuests.Add(Cast<UCG_QuestData>(Element));
+	}
+	
+	bQuestLoaded = true;
+	RollQuests();
+}
+
+void UCG_QuestManager::RollQuests()
+{
+	NumQuestsToRoll = FMath::Min(NumQuestsToRoll, AllQuests.Num());
+	
+	TArray<TObjectPtr<UCG_QuestData>> CachedAllQuests = AllQuests;
+
+	for (int32 Index = 0; Index < CachedAllQuests.Num(); ++Index)
+	{
+		const int32 SwapIndex = FMath::RandRange(Index, CachedAllQuests.Num() - 1);
+		CachedAllQuests.Swap(Index, SwapIndex);
 	}
 
-	Self->FOnLoadedAllQuests.Broadcast();
-}
-            })
-        );
-    }
-}
-
-void UCG_QuestManager::ActivateQuests(UCG_QuestData* QuestData)
-{
-	if (!IsValid(QuestData)) return;
-
-	FCG_ActiveQuest NewQuest;
-
-	// ✅ poprawne przypisania
-	NewQuest.QuestData = QuestData;
-	NewQuest.QuestID = QuestData->GetPrimaryAssetId();
-	NewQuest.Objectives = QuestData->QuestObjectives;
-
-	// (opcjonalnie)
-	UsedRegions.Add(QuestData->QuestRegion);
-
-	// ⚠️ dodajemy do tablicy
-	int32 QuestIndex = ActiveQuests.Add(NewQuest);
-	FCG_ActiveQuest& Quest = ActiveQuests[QuestIndex];
-
-	// ✅ KLUCZOWE
-	RegisterObjectives(Quest);
-
-	UE_LOG(LogQuestManager, Log, TEXT("[%hs] - Activated quest: %s"), __FUNCTION__, *QuestData->QuestName.ToString());
-}
-
-void UCG_QuestManager::RegisterObjectives(FCG_ActiveQuest& Quest)
-{
-	for (FCG_QuestObjective& Objective : Quest.Objectives)
+	for (int32 Index = 0; Index < NumQuestsToRoll; ++Index)
 	{
-		// 🔥 NAJWAŻNIEJSZE
-		Objective.OwningQuest = &Quest;
+		UCG_QuestData* SelectedQuest = CachedAllQuests[Index];
 		
-		UE_LOG(LogQuestManager, Warning,
-	TEXT("REGISTER Objective Tag: %s"),
-	*Objective.ObjectiveTag.ToString());
-
-		ObjectivesByTag
-			.FindOrAdd(Objective.ObjectiveTag)
-			.Add(&Objective);
-	}
-}
-
-void UCG_QuestManager::UnregisterObjectives(FCG_ActiveQuest& Quest)
-{
-	for (FCG_QuestObjective& Objective : Quest.Objectives)
-	{
-		if (TArray<FCG_QuestObjective*>* Array = ObjectivesByTag.Find(Objective.ObjectiveTag))
+		if (!IsValid(SelectedQuest))
 		{
-			Array->Remove(&Objective);
-
-			if (Array->IsEmpty())
-			{
-				ObjectivesByTag.Remove(Objective.ObjectiveTag);
-			}
-		}
-	}
-}
-
-void UCG_QuestManager::NotifyObjective(FGameplayTag QuestTag)
-{
-	if (!QuestTag.IsValid())
-	{
-		UE_LOG(LogQuestManager, Warning, TEXT("NotifyObjective: Invalid tag"));
-		return;
-	}
-	
-	UE_LOG(LogQuestManager, Warning,
-	TEXT("NOTIFY Tag: %s"),
-	*QuestTag.ToString());
-
-	TArray<FCG_QuestObjective*>* Objectives = ObjectivesByTag.Find(QuestTag);
-	if (!Objectives)
-	{
-		UE_LOG(LogQuestManager, Verbose, TEXT("No objectives found for tag: %s"), *QuestTag.ToString());
-		return;
-	}
-
-	TArray<FCG_ActiveQuest*> QuestsToComplete;
-
-	for (FCG_QuestObjective* Objective : *Objectives)
-	{
-		if (!Objective) continue;
-
-		// 🔒 safety – jeśli quest już nie istnieje
-		if (!Objective->OwningQuest) continue;
-
-		// ⛔ już ukończony → skip
-		if (Objective->IsCompleted()) continue;
-
-		// ✅ increment (z clampem)
-		Objective->CurrentAmount = FMath::Min(
-			Objective->CurrentAmount + 1,
-			Objective->RequiredAmount
-		);
-
-		UE_LOG(LogQuestManager, Log,
-			TEXT("Objective progress [%s]: %d/%d"),
-			*QuestTag.ToString(),
-			Objective->CurrentAmount,
-			Objective->RequiredAmount
-		);
-
-		// 🎯 jeśli objective właśnie się ukończył
-		if (Objective->IsCompleted())
-		{
-			FCG_ActiveQuest* OwningQuest = Objective->OwningQuest;
-
-			if (OwningQuest->IsCompleted())
-			{
-				QuestsToComplete.AddUnique(OwningQuest);
-			}
-		}
-	}
-
-	// 🔥 finalize questy (po pętli → unikamy modyfikacji w trakcie iteracji)
-	for (FCG_ActiveQuest* Quest : QuestsToComplete)
-	{
-		if (!Quest) continue;
-
-		UE_LOG(LogQuestManager, Log,
-			TEXT("Quest ready to complete: %s"),
-			*Quest->QuestData->QuestName.ToString()
-		);
-
-		CompleteQuest(*Quest);
-	}
-}
-
-void UCG_QuestManager::ClearActiveQuests()
-{
-	UE_LOG(LogQuestManager, Log, TEXT("[%hs] - Clear active quests!"), __FUNCTION__);
-}
-
-void UCG_QuestManager::CompleteQuest(FCG_ActiveQuest& Quest)
-{
-	UE_LOG(LogQuestManager, Log, TEXT("[%hs] - Quest completed!"), __FUNCTION__);
-	
-	for (int i = 0; i < ActiveQuests.Num(); i++)
-	{
-		if (ActiveQuests[i].IsCompleted())
-		{
-			UnregisterObjectives(ActiveQuests[i]); // 🔥 NOWE
-
-			ActiveQuests.RemoveAt(i);
-			i--;
-			UE_LOG(LogQuestManager, Log, TEXT("[%hs] - Quest removed!"), __FUNCTION__);
-
-			if (ActiveQuests.IsEmpty())
-			{
-				CompleteDay();
-			}
-		}
-	}
-}
-
-FCG_QuestSaveData UCG_QuestManager::GetQuestSaveData()
-{
-	FCG_QuestSaveData Data;
-	
-	for (const FCG_ActiveQuest& ActiveQuest : ActiveQuests)
-	{
-		Data.ActiveQuests.Add(ActiveQuest.QuestData->GetPrimaryAssetId());
-	}
-	
-	for (const UCG_QuestData* RemainingQuest : RemainingQuests)
-	{
-		if (Data.RemainingQuests.IsEmpty())
-		{
+			UE_LOG(LogQuestManager, Error, TEXT("[%hs] - Invalid selected quest!"), __FUNCTION__);
 			continue;
 		}
-		Data.RemainingQuests.Add(RemainingQuest->GetPrimaryAssetId());
+
+		ActivateQuest(SelectedQuest);
 	}
-	
-	UE_LOG(LogQuestManager, Log, TEXT("[%hs] - Save quests!"), __FUNCTION__);
-	return Data;
+	OnActivatedTodayQuests.ExecuteIfBound();
 }
 
-void UCG_QuestManager::LoadQuestSaveData(FCG_QuestSaveData& SaveData)
+void UCG_QuestManager::ActivateQuest(const UCG_QuestData* InQuest)
 {
-	ActiveQuests.Empty();
+	FCG_QuestState NewQuest;
 	
-	UAssetManager& AssetManager = UAssetManager::Get();
+	NewQuest.QuestName = InQuest->QuestName;
+	NewQuest.QuestObjectives = InQuest->QuestObjectives;
+	NewQuest.Region = InQuest->QuestRegion;
+	NewQuest.QuestTag = InQuest->QuestTag;
 	
-	auto IDs = UAssetManager::Get().GetPrimaryAssetIdList(FPrimaryAssetType("Quest"),SaveData.ActiveQuests);
-	UE_LOG(LogQuestManager, Warning, TEXT("[%hs] - Quest ID from AssetManager: %hhd"), __FUNCTION__, IDs);
+	FObjectiveHandle ObjectiveHandle;
+	ObjectiveHandle.QuestIndex = TodayQuests.Add(NewQuest);
 	
-	for (FPrimaryAssetId QuestID : SaveData.ActiveQuests)
+	for (int Index = 0; Index < NewQuest.QuestObjectives.Num(); ++Index)
 	{
-		// Load asset asynchronously
-		auto Handle = AssetManager.LoadPrimaryAsset(QuestID);
-		
-		if (!Handle.IsValid())
-		{
-			UE_LOG(LogQuestManager, Warning, TEXT("[%hs] - Quest: %s is unable to load!"),__FUNCTION__, *QuestID.ToString());
-			continue;
-		}
-		
-		Handle->WaitUntilComplete();
-		
-		UObject* QuestDataAsset = AssetManager.GetPrimaryAssetObject(QuestID);
-		
-		if (UCG_QuestData* Quest = Cast<UCG_QuestData>(QuestDataAsset))
-		{
-			UE_LOG(LogQuestManager, Log, TEXT("[%hs] - Loaded Quest: %s"), __FUNCTION__, *Quest->QuestName.ToString());
-			AddQuest(Quest);
-		}
+		ObjectiveHandle.ObjectiveIndex = Index;
+		ObjectivesHandles.Add(NewQuest.GetQuestObjective(Index)->ObjectiveTag, ObjectiveHandle);
 	}
-	
-	UE_LOG(LogQuestManager, Log, TEXT("[%hs] - Load quests!"), __FUNCTION__);
 
+	UE_LOG(LogQuestManager, Log, TEXT("[%hs] - Activated quest: %s"), __FUNCTION__, *InQuest->QuestName.ToString());
 }
 
-void UCG_QuestManager::SetQuestObject()
+void UCG_QuestManager::CompleteQuest(FCG_QuestState& InQuest)
 {
-	TArray<AActor*> FoundSpawners;
-	const FName ClassTag = "ESpawnerType::QuestObject";
+	InQuest.IsCompleted();
+	UE_LOG(LogQuestManager, Log, TEXT("[%hs] - Quest %s has been completed!"), __FUNCTION__, *InQuest.QuestName.ToString());
+	
+	CheckTodayQuestsStatus();
+}
 
-	UGameplayStatics::GetAllActorsOfClassWithTag(
-		GetWorld(),
-		ACG_SpawnerBase::StaticClass(),
-		ClassTag,
-		FoundSpawners
-	);
-
-	if (FoundSpawners.IsEmpty())
+void UCG_QuestManager::UpdateObjective(const FGameplayTag InObjectiveTag)
+{
+	if (!InObjectiveTag.IsValid())
 	{
-		UE_LOG(LogQuestManager, Log, TEXT("No quest spawners found"));
+		UE_LOG(LogQuestManager, Error, TEXT("[%hs] - Tag isn't valid!"), __FUNCTION__);
 		return;
 	}
-
-	const TSet<FGameplayTag> ActiveTags = GetActiveObjectiveTags();
-
-	for (AActor* Actor : FoundSpawners)
-	{
-		ACG_SpawnerBase* Spawner = Cast<ACG_SpawnerBase>(Actor);
-		if (!Spawner) continue;
-
-		// 🔥 KLUCZOWY WARUNEK
-		if (ActiveTags.Contains(Spawner->SpawnerTag))
-		{
-			Spawner->Spawn();
-
-			UE_LOG(LogQuestManager, Log,
-				TEXT("Spawned spawner with tag: %s"),
-				*Spawner->SpawnerTag.ToString());
-		}
-	}
-		/*UE_LOG(LogQuestManager, Log, TEXT("[%hs] - Spawn quest object spawners!"), __FUNCTION__);
-	}
-	else
-	{
-		UE_LOG(LogQuestManager, Log, TEXT("[%hs] - There aren't quest object spawner to spawn!"), __FUNCTION__);
-	}*/
-}
-
-void UCG_QuestManager::CompleteDay()
-{
-	OnFinishedAllQuests.Broadcast();
-	UCG_DayManager* DayManager = GetGameInstance()->GetSubsystem<UCG_DayManager>();
-	ACG_SpawnerBase* HouseSpawner = DayManager->FindSpawnerClosestToPlayer();
-	HouseSpawner->SpawnedOnEndDay = true;
-	DayManager->SpawnHouse(HouseSpawner);
-				
-	UE_LOG(LogQuestManager, Log, TEXT("[%hs] - Finished all quests today!"), __FUNCTION__);
-}
-
-TSet<FGameplayTag> UCG_QuestManager::GetActiveObjectiveTags()
-{
-	TSet<FGameplayTag> Tags;
-
-	for (const FCG_ActiveQuest& Quest : ActiveQuests)
-	{
-		for (const FCG_QuestObjective& Obj : Quest.Objectives)
-		{
-			if (!Obj.IsCompleted())
-			{
-				Tags.Add(Obj.ObjectiveTag);
-			}
-		}
-	}
-
-	return Tags;
-}
-
-void UCG_QuestManager::OnAssetsLoaded()
-{
-	UE_LOG(LogTemp, Warning, TEXT("QuestSubsystem: Assets Loaded"));
-
-	UAssetManager& Manager = UCG_AssetManager::Get();
-
-	LoadedQuests.Empty();
-
-	for (const FPrimaryAssetId& Id : QuestAssetIds)
-	{
-		UObject* Obj = Manager.GetPrimaryAssetObject(Id);
-
-		if (UCG_QuestData* Quest = Cast<UCG_QuestData>(Obj))
-		{
-			LoadedQuests.Add(Quest);
-		}
-	}
-
-	UE_LOG(LogTemp, Warning, TEXT("Loaded Quests: %d"), LoadedQuests.Num());
-
-	// 🔹 TU robisz swoją logikę
-	// BuildObjectivesIndex();
-	// SpawnQuestObjects();
 	
-	UCG_GameInstance* InGameInstance = Cast<UCG_GameInstance>(GetGameInstance());
+	const FObjectiveHandle* ObjectiveHandle = ObjectivesHandles.Find(InObjectiveTag);
 
-	DrawQuests();
-	InGameInstance->GetSubsystem<UCG_DayManager>()->InitializeDay();
-	SetQuestObject();
-	
-	if (InGameInstance)
+	if (!ObjectiveHandle)
 	{
-		InGameInstance->OnQuestSystemReadyDynamic.Broadcast();
+		UE_VLOG_UELOG(this, LogQuestManager, Error, TEXT("[%hs] - Invalid ObjectiveHandle!"), __FUNCTION__);
+		return;
 	}
-
-	OnQuestSystemReady.Broadcast();
+	
+	const int32 QuestIndex = ObjectiveHandle->QuestIndex;
+	const int32 ObjectiveIndex = ObjectiveHandle->ObjectiveIndex;
+	
+	FCG_ObjectiveState* Objective = TodayQuests[QuestIndex].GetQuestObjective(ObjectiveIndex);
+	Objective->IncrementProgress();
+	UE_LOG(LogQuestManager, Log, TEXT("Objective progress [%s]: %d/%d"), *InObjectiveTag.ToString(), Objective->CurrentProgress, Objective->RequiredProgress);
+	
+	if (TodayQuests[QuestIndex].IsCompleted())
+	{
+		CompleteQuest(TodayQuests[QuestIndex]);
+	}
 }
 
-void UCG_QuestManager::AddQuest(UCG_QuestData* Quest)
+bool UCG_QuestManager::CheckTodayQuestsStatus()
 {
-	FCG_ActiveQuest NewQuest;
-	NewQuest.QuestID = Quest->GetPrimaryAssetId();
-	NewQuest.QuestData = Quest;
-	NewQuest.Objectives = Quest->QuestObjectives;
-	ActiveQuests.Add(NewQuest);
-	UsedRegions.Add(Quest->QuestRegion);
+	bool bAreQuestsFinished = true;
+	
+	for (const FCG_QuestState& Quest : TodayQuests)
+	{
+		if (!Quest.bIsCompleted)
+		{
+			bAreQuestsFinished = false;
+		}
+	}
+
+	if (bAreQuestsFinished)
+	{
+		OnFinishedTodayQuests.Broadcast();
+		UE_LOG(LogQuestManager, Log, TEXT("[%hs] - Finished all quests today!"), __FUNCTION__);
+	}
+	
+	return bAreQuestsFinished;
+}
+
+const TArray<FCG_QuestState>& UCG_QuestManager::GetTodayQuests() const
+{
+	if (TodayQuests.IsEmpty())
+	{
+		UE_VLOG_UELOG(this, LogQuestManager, Warning, TEXT("[%hs] - TodayQuests is empty!"), __FUNCTION__);
+	}
+	
+	return TodayQuests;
+}
+
+FGameplayTagContainer UCG_QuestManager::GetTodayQuestsTags()
+{
+	if (TodayQuests.IsEmpty())
+	{
+		UE_VLOG_UELOG(this, LogQuestManager, Warning, TEXT("[%hs] - TodayQuests is empty!"), __FUNCTION__);
+	}
+	
+	FGameplayTagContainer GameplayTags;
+
+	for (FCG_QuestState& Quest : TodayQuests)
+	{
+		GameplayTags.AddTag(Quest.QuestTag);
+	}
+	
+	return GameplayTags;
+}
+
+bool UCG_QuestManager::AreQuestsLoaded() const
+{
+	return bQuestLoaded;
+}
+
+void UCG_QuestManager::SetNumQuestsPerDay(const int32 InNumberQuests) 
+{
+	NumQuestsToRoll = InNumberQuests;
 }

@@ -9,11 +9,11 @@
 #include "Actors/Weapons/Data/FCG_WeaponParameters.h"
 #include "Actors/Weapons/Data/FCG_WeaponProperties.h"
 #include "GameFramework/Actor.h"
-#include "CG_Weapon.generated.h"
+#include "CG_WeaponBase.generated.h"
 
 class UCG_PDA_Weapon;
-struct FCG_WeaponParameters;
 class UGameplayEffect;
+struct FCG_WeaponParameters;
 struct FGameplayEffectSpecHandle;
 
 USTRUCT()
@@ -28,18 +28,24 @@ struct FWeaponSocketLocations
 };
 
 UCLASS()
-class CLOSEDGROUNDS_API ACG_Weapon : public AActor
+class CLOSEDGROUNDS_API ACG_WeaponBase : public AActor
 {
 	GENERATED_BODY()
-
+	//REFACTOR
 public:
-	ACG_Weapon();
+	FName WeaponName;
+	void SetUpWeapon(UCG_PDA_Weapon* Data);
+	//REFACTOR
+	
+public:
+	ACG_WeaponBase();
 
 	virtual void Tick(float DeltaSeconds) override;
+	
 
 	// Tag to indicate the hand that the weapon is held in.
 	UPROPERTY(BlueprintReadWrite)
-	FGameplayTag HandTag = FGameplayTag::EmptyTag;
+	FGameplayTag WeaponHandTag = FGameplayTag::EmptyTag;
 	
 	UPROPERTY(BlueprintReadWrite)
 	TObjectPtr<UStaticMeshComponent> WeaponMesh = nullptr;

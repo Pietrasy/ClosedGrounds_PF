@@ -1,18 +1,27 @@
 ﻿// Pietras
 
-#include "Actors/Weapons/Data/CG_Weapon.h"
+#include "Actors/Weapons/CG_WeaponBase.h"
 
-#include "AbilitySystemBlueprintLibrary.h"
+
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
 #include "Actors/Weapons/Data/CG_PDA_Weapon.h"
 #include "ClosedGrounds/ClosedGrounds.h"
 #include "GameFramework/Character.h"
+#include "GAS/ExecCalculations/CG_ExecutionCalculation_Damage.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Tags/CG_GAS_GameplayTags.h"
 
+void ACG_WeaponBase::SetUpWeapon(UCG_PDA_Weapon* Data)
+{
+	WeaponMesh->SetStaticMesh(Data->GetWeaponMesh());
+	
+	Properties = Data->Properties;
+	Parameters = Data->Parameters;
+}
+
 // Sets default values
-ACG_Weapon::ACG_Weapon()
+ACG_WeaponBase::ACG_WeaponBase()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
@@ -32,14 +41,14 @@ ACG_Weapon::ACG_Weapon()
 	WeaponMesh->SetCollisionProfileName("NoCollision", false);
 }
 
-void ACG_Weapon::Tick(float DeltaSeconds)
+void ACG_WeaponBase::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
 	PerformWeaponTrace();
 }
 
-void ACG_Weapon::CacheCurrentTopSocketLocation()
+void ACG_WeaponBase::CacheCurrentTopSocketLocation()
 {
 	if (IsValid(WeaponMesh))
 	{
@@ -47,7 +56,7 @@ void ACG_Weapon::CacheCurrentTopSocketLocation()
 	}
 }
 
-void ACG_Weapon::CacheCurrentBottomSocketLocation()
+void ACG_WeaponBase::CacheCurrentBottomSocketLocation()
 {
 	if (IsValid(WeaponMesh))
 	{
@@ -55,7 +64,7 @@ void ACG_Weapon::CacheCurrentBottomSocketLocation()
 	}
 }
 
-void ACG_Weapon::CachePreviousTopSocketLocation()
+void ACG_WeaponBase::CachePreviousTopSocketLocation()
 {
 	if (IsValid(WeaponMesh))
 	{
@@ -63,7 +72,7 @@ void ACG_Weapon::CachePreviousTopSocketLocation()
 	}
 }
 
-void ACG_Weapon::CachePreviousBottomSocketLocation()
+void ACG_WeaponBase::CachePreviousBottomSocketLocation()
 {
 	if (IsValid(WeaponMesh))
 	{
@@ -71,7 +80,7 @@ void ACG_Weapon::CachePreviousBottomSocketLocation()
 	}
 }
 
-void ACG_Weapon::ClearSocketLocations()
+void ACG_WeaponBase::ClearSocketLocations()
 {
 	SocketLocations.CurrentTopSocket = FVector3d::Zero();
 	SocketLocations.CurrentBottomSocket = FVector3d::Zero();
@@ -79,7 +88,7 @@ void ACG_Weapon::ClearSocketLocations()
 	SocketLocations.PreviousBottomSocket = FVector3d::Zero();
 }
 
-void ACG_Weapon::StartHitDetection()
+void ACG_WeaponBase::StartHitDetection()
 {
 	SocketLocations.PreviousTopSocket = WeaponMesh->GetSocketLocation(TopSocketName);
 	SocketLocations.PreviousBottomSocket = WeaponMesh->GetSocketLocation(BottomSocketName);
@@ -89,13 +98,13 @@ void ACG_Weapon::StartHitDetection()
 	SetActorTickEnabled(true);
 }
 
-void ACG_Weapon::EndHitDirection()
+void ACG_WeaponBase::EndHitDirection()
 {
 	SetActorTickEnabled(false);
 	ClearSocketLocations();
 }
 
-void ACG_Weapon::PerformWeaponTrace()
+void ACG_WeaponBase::PerformWeaponTrace()
 {
 	// Set weapon sockets to current position.
 	CacheCurrentTopSocketLocation();
@@ -155,7 +164,7 @@ void ACG_Weapon::PerformWeaponTrace()
 	}
 }
 
-void ACG_Weapon::DrawDebugTraceBox(FVector TopSocket, FVector BottomSocket)
+void ACG_WeaponBase::DrawDebugTraceBox(FVector TopSocket, FVector BottomSocket)
 {
 	const FVector Direction = (TopSocket - BottomSocket);
 	const float HalfLenght = Direction.Size()*0.5f;
@@ -180,7 +189,8 @@ void ACG_Weapon::DrawDebugTraceBox(FVector TopSocket, FVector BottomSocket)
 );
 }
 
-void ACG_Weapon::SetupWeapon(const TObjectPtr<ACharacter> InWeaponOwner, const UCG_PDA_Weapon* InWeaponData)
+// @Deprecated
+void ACG_WeaponBase::SetupWeapon(const TObjectPtr<ACharacter> InWeaponOwner, const UCG_PDA_Weapon* InWeaponData)
 {
 	WeaponOwner = InWeaponOwner;
 
@@ -191,8 +201,7 @@ void ACG_Weapon::SetupWeapon(const TObjectPtr<ACharacter> InWeaponOwner, const U
 	}
 	Parameters = InWeaponData->Parameters;
 	Properties = InWeaponData->Properties;
-	WeaponMesh->SetStaticMesh(Properties.WeaponMesh);
-	HandTag = Properties.HandTag;
+	//WeaponMesh->SetStaticMesh(Properties.StaticMesh);
 	
 	UAbilitySystemComponent* OwnerASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(WeaponOwner);
 	FGameplayEffectContextHandle EffectContext = OwnerASC->MakeEffectContext();
@@ -206,12 +215,12 @@ void ACG_Weapon::SetupWeapon(const TObjectPtr<ACharacter> InWeaponOwner, const U
 	SetEffectToWeapon(NewHandle);
 }
 
-void ACG_Weapon::SetEffectToWeapon(const FGameplayEffectSpecHandle& EffectSpec)
+void ACG_WeaponBase::SetEffectToWeapon(const FGameplayEffectSpecHandle& EffectSpec)
 {
 	EffectSpecHandleOld = EffectSpec;
 }
 
-void ACG_Weapon::DetectHitPawn(APawn* HitPawn)
+void ACG_WeaponBase::DetectHitPawn(APawn* HitPawn)
 {
 	UAbilitySystemComponent* TargetASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(HitPawn);
 
@@ -220,18 +229,33 @@ void ACG_Weapon::DetectHitPawn(APawn* HitPawn)
 		FGameplayEffectContextHandle ContextHandle = TargetASC->MakeEffectContext();
 		ContextHandle.AddSourceObject(this);
 		ContextHandle.AddInstigator(WeaponOwner, this);
+		
+		//--- REFACTOR ---
+		UGameplayEffect* DamageEffect = NewObject<UGameplayEffect>(GetTransientPackage(), FName(TEXT("InstantDamage")));
+		DamageEffect->DurationPolicy = EGameplayEffectDurationType::Instant;
+		
+		FGameplayEffectExecutionDefinition ExecutionDefinition;
+		ExecutionDefinition.CalculationClass = UCG_ExecutionCalculation_Damage::StaticClass();
+		DamageEffect->Executions.Add(ExecutionDefinition);
+		
+		FGameplayEffectSpec* InNewSpecHandle = new FGameplayEffectSpec(DamageEffect, ContextHandle, 1.f);
+		InNewSpecHandle->SetSetByCallerMagnitude(CG_GASGameplayTags::GAS_Data_Damage, Parameters.Damage);
+		InNewSpecHandle->SetSetByCallerMagnitude(CG_GASGameplayTags::GAS_Data_Critical, Parameters.CritChance);
+		InNewSpecHandle->SetSetByCallerMagnitude(CG_GASGameplayTags::GAS_Cooldown_Attack, Parameters.AttackSpeed);
+		InNewSpecHandle->AddDynamicAssetTag(CG_GASGameplayTags::GAS_Effect_Hit);
+		//--- REFACTOR ---
 
-		if (!IsValid(HitEffectClass))
+		/*if (!IsValid(HitEffectClass))
 		{
 			UE_LOG(LogGame, Error, TEXT("[%hs] - HitEffectClass isn't valid!"), __FUNCTION__);
 			return;
-		}
+		}*/
 		
-		FGameplayEffectSpecHandle SpecHandle = TargetASC->MakeOutgoingSpec(HitEffectClass, 0.f, ContextHandle);
+		/*FGameplayEffectSpecHandle SpecHandle = TargetASC->MakeOutgoingSpec(HitEffectClass, 0.f, ContextHandle);
 		SpecHandle.Data.Get()->SetSetByCallerMagnitude(CG_GASGameplayTags::GAS_Data_Damage, Parameters.Damage);
 		SpecHandle.Data.Get()->SetSetByCallerMagnitude(CG_GASGameplayTags::GAS_Data_Critical, Parameters.CritChance);
 		SpecHandle.Data.Get()->SetSetByCallerMagnitude(CG_GASGameplayTags::GAS_Cooldown_Attack, Parameters.AttackSpeed);
-		SpecHandle.Data->AddDynamicAssetTag(CG_GASGameplayTags::GAS_Effect_Hit);
+		SpecHandle.Data->AddDynamicAssetTag(CG_GASGameplayTags::GAS_Effect_Hit);*/
 
 		//Apply weapon effects.
 		for (const FCG_WeaponEffect& InWeaponEffect : WeaponEffects)
@@ -255,7 +279,8 @@ void ACG_Weapon::DetectHitPawn(APawn* HitPawn)
 			}
 		}
 		
-		TargetASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+		TargetASC->ApplyGameplayEffectSpecToSelf(*InNewSpecHandle);
+		
 		UE_LOG(LogGame, Log, TEXT("[%s] is hit!"), *(TargetASC->GetAvatarActor()->GetName()));
 	}
 }

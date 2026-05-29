@@ -20,6 +20,10 @@ public:
 	virtual void BeginPlay() override;
 	
 	virtual void OnPossess(APawn* InPawn) override;
+	
+	void EnablePlayerInput() const;
+	void DisablePlayerInput()const ;
+	
 
 protected:
 	UPROPERTY(BlueprintReadOnly)

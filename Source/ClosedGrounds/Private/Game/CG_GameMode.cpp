@@ -3,62 +3,64 @@
 
 #include "Game/CG_GameMode.h"
 
+#include "CG_ClosedGroundsSettings.h"
 #include "ClosedGrounds/ClosedGrounds.h"
-#include "Subsystems/DayManager/CG_DayManager.h"
-#include "Game/CG_GameInstance.h"
-#include "Kismet/GameplayStatics.h"
+#include "Components/CG_DayManagerComponent.h"
 #include "Subsystems/QuestManager/CG_QuestManager.h"
+
+
+ACG_GameMode::ACG_GameMode()
+{
+	DayManagerComponent = CreateDefaultSubobject<UCG_DayManagerComponent>(TEXT("DayManagerComponent"));
+}
 
 void ACG_GameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
 {
 	Super::InitGame(MapName, Options, ErrorMessage);
 	
-	UGameInstance* GameInstance = GetGameInstance();
+	const UGameInstance* GameInstance = GetGameInstance();
+	const UCG_ClosedGroundsSettings* ClosedGroundsSettings = GetDefault<UCG_ClosedGroundsSettings>();
 	
-	DayManagerSubsystem = GameInstance->GetSubsystem<UCG_DayManager>();
+	QuestManager = GameInstance->GetSubsystem<UCG_QuestManager>();
+	QuestManager->SetNumQuestsPerDay(ClosedGroundsSettings->NumberQuestsPerDay);
 	
-	QuestManagerSubsystem = GameInstance->GetSubsystem<UCG_QuestManager>();
-	
+	DayManagerComponent->OnInitializedDay.BindUObject(this, &ACG_GameMode::StartGame);
+	DayManagerComponent->SetVolumetricClouds(ClosedGroundsSettings->Clouds);
+	DayManagerComponent->InitializeDayManager();
 }
 
-void ACG_GameMode::BeginPlay()
+void ACG_GameMode::RegisterSpawner(ACG_GameplayActor* InEnemySpawner)
 {
-	Super::BeginPlay();
+	ICG_DayManagerInterface::RegisterSpawner(InEnemySpawner);
 	
-	if (QuestManagerSubsystem)
+	DayManagerComponent->RegisterSpawner(InEnemySpawner);
+}
+
+void ACG_GameMode::StartGame_Implementation()
+{
+	DayManagerComponent->SetPlayerSpawn();
+	OnStartGame.Broadcast();
+}
+
+
+UCG_QuestManager* ACG_GameMode::GetQuestManager() const
+{
+	if (!IsValid(QuestManager))
 	{
-		QuestManagerSubsystem->InitializeQuestSystem();
+		UE_LOG(LogGame, Error, TEXT("[%hs] - QuestManager isn't valid!"), __FUNCTION__);
+		return nullptr;
 	}
 	
-
+	return QuestManager;
 }
 
-void ACG_GameMode::StartPlay()
+UCG_DayManagerComponent* ACG_GameMode::GetDayManager() const
 {
-	Super::StartPlay();
+	if (!IsValid(DayManagerComponent))
+	{
+		UE_LOG(LogGame, Error, TEXT("[%hs] - DayManagerComponent isn't valid!"), __FUNCTION__);
+		return nullptr;
+	}
 	
-	//DayManagerSubsystem->StartDay();
-}
-
-void ACG_GameMode::StartDay()
-{
-	OnStartGame.Broadcast();
-	
-	UCG_GameInstance* GameInstance = Cast<UCG_GameInstance>(UGameplayStatics::GetGameInstance(GetWorld()));
-}
-
-void ACG_GameMode::FinishDay()
-{
-	UCG_DayManager* DayManager = GetGameInstance()->GetSubsystem<UCG_DayManager>();
-	UCG_QuestManager* QuestManager = GetGameInstance()->GetSubsystem<UCG_QuestManager>();
-}
-
-void ACG_GameMode::HandlePlayerDeath_Implementation()
-{
-	UCG_GameInstance* GameInstance = Cast<UCG_GameInstance>(UGameplayStatics::GetGameInstance(GetWorld()));
-}
-
-void ACG_GameMode::HandleLoadGame()
-{
-	StartDay();
+	return DayManagerComponent;
 }

@@ -4,119 +4,82 @@
 #include "Components/CG_WeaponComponent.h"
 
 #include "AbilitySystemComponent.h"
-#include "GAS/AttributeSets/CG_CharacterAttributeSet.h"
 #include "Characters/CG_CharacterBase.h"
 #include "ClosedGrounds/ClosedGrounds.h"
-#include "Actors/Weapons/Data/CG_WeaponData.h"
 #include "Actors/Weapons/Data/CG_PDA_Weapon.h"
-#include "Actors/Weapons/Data/CG_Weapon.h"
+#include "Actors/Weapons/CG_WeaponBase.h"
 #include "Tags/CG_GameplayTags.h"
+
+
 
 void UCG_WeaponComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	CacheCharacterOwner();
-}
-
-void UCG_WeaponComponent::StartSetupWeapon()
-{
-	CacheCharacterOwner();
-	AddWeapons();
-}
-
-void UCG_WeaponComponent::SetNewWeapon(UCG_PDA_Weapon* WeaponData)
-{
-	SpawnWeapon(WeaponData);
-}
-
-void UCG_WeaponComponent::CacheCharacterOwner()
-{
 	OwningCharacter = CastChecked<ACG_CharacterBase>(GetOwner());
+	AddWeaponToOwner(WeaponData);
 }
 
-void UCG_WeaponComponent::AddWeapons()
+void UCG_WeaponComponent::AddWeaponToOwner(UCG_PDA_Weapon* InWeaponData)
 {
-	if (IsValid(RightWeaponDataSTRUCT))
+	if (!IsValid(InWeaponData))
 	{
-		RightWeaponDataSTRUCT->Properties.HandTag = CG_GameplayTags::CG_WeaponHand_Right;
-		RightWeapon = SpawnWeapon(RightWeaponDataSTRUCT);
+		UE_LOG(LogWeaponComponent, Error, TEXT("[%hs] - WeaponData isn't valid!"), __FUNCTION__);
+		return;
 	}
 	
-	if (RightWeaponData)
+	if (!IsValid(RightWeapon))
 	{
-		// Create an UCG_Weapon based on the data assigned to the WeaponComponent.
-		//UCG_WeaponData* Weapon = NewObject<UCG_WeaponData>(this, RightWeaponData);
-		// Assign a WeaponHand tag.
-		//Weapon->HandTag = CG_GameplayTags::CG_WeaponHand_Right;
-		//RightWeapon = SpawnWeapon(Weapon);
-		RightWeapon = SpawnWeapon(RightWeaponDataSTRUCT);
+		RightWeapon = SpawnWeapon();
 	}
 	
-	if (LeftWeaponData)
+	RightWeapon->SetUpWeapon(InWeaponData);
+	RightWeapon->AttachToComponent(OwningCharacter->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, RightWeaponSocket);
+	
+	if (InWeaponData->Properties.WeaponType == EWeaponType::DualWielding)
 	{
-		UCG_WeaponData* Weapon = NewObject<UCG_WeaponData>(this, LeftWeaponData);
-		Weapon->HandTag = CG_GameplayTags::CG_WeaponHand_Left;
-		//LeftWeapon = SpawnWeapon(Weapon);
+		if (!IsValid(LeftWeapon))
+		{
+			LeftWeapon = SpawnWeapon();
+		}
+		
+		LeftWeapon->SetUpWeapon(InWeaponData);
+		LeftWeapon->AttachToComponent(OwningCharacter->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, LeftWeaponSocket);
 	}
 }
 
-TObjectPtr<ACG_Weapon> UCG_WeaponComponent::SpawnWeapon(TObjectPtr<UCG_PDA_Weapon> WeaponData)
+ACG_WeaponBase* UCG_WeaponComponent::SpawnWeapon()
 {
-	if (!IsValid(WeaponData))
-	{
-		UE_LOG(LogTemp, Error, TEXT("UCG_WeaponComponent::CreateWeaponFromData - WeaponData isn't valid!"));
-		return nullptr;
-	}
+	UWorld* InWorld = GetWorld();
+	checkf(InWorld, TEXT("[%hs] - World isn't valid!"), __FUNCTION__);
+	
+	ACG_WeaponBase* InSpawnedWeapon = GetWorld()->SpawnActor<ACG_WeaponBase>();
+	InSpawnedWeapon->SetOwner(OwningCharacter);
+	InSpawnedWeapon->SetInstigator(OwningCharacter);
+	return InSpawnedWeapon;
+}
 
+void UCG_WeaponComponent::RemoveWeapons()
+{
+}
+
+TArray<ACG_WeaponBase*> UCG_WeaponComponent::GetWeapons()
+{
+	TArray<ACG_WeaponBase*> Weapons;
 	if (IsValid(RightWeapon))
 	{
-		Weapons.Remove(RightWeapon);
-		RightWeapon->Destroy();
+		Weapons.Add(RightWeapon);
 	}
-	// Spawn ACG_WeaponActor.
-	ACG_Weapon* Weapon = GetWorld()->SpawnActor<ACG_Weapon>();
-	// Populate the spawned weapon.
-	// Attach to the hand of the character mesh.
-	Weapon->SetupWeapon(OwningCharacter, WeaponData);
-	AttachWeaponToHand(Weapon);
-	// Add weapon abilities to the component owner.
-	//OwningCharacter->GrantAbilities(WeaponData->Abilities);
-
-	Weapon->HitEffectClass = DefaultHitEffect;
-	
-	// Null UCG_Weapon object.
-	//WeaponData = nullptr;
-	Weapons.Add(Weapon);
-
-	return Weapon;
+	if (IsValid(LeftWeapon))
+	{
+		Weapons.Add(LeftWeapon);
+	}
+		
+	return Weapons;
 }
 
-void UCG_WeaponComponent::AttachWeaponToHand(ACG_Weapon* WeaponActor) const
+TObjectPtr<ACG_WeaponBase> UCG_WeaponComponent::GetWeaponInHand(const FGameplayTag HandTag)
 {
-	// Attach a weapon to the correct hand, depending on a WeaponHand tag.
-	if (WeaponActor->HandTag == CG_GameplayTags::CG_WeaponHand_Right)
-	{
-		WeaponActor->AttachToComponent(OwningCharacter->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, RightWeaponSocket);
-	}
-	else if (WeaponActor->HandTag == CG_GameplayTags::CG_WeaponHand_Left)
-	{
-		WeaponActor->AttachToComponent(OwningCharacter->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, LeftWeaponSocket);
-	}
-	else
-	{
-		UE_LOG(LogTemp, Error, TEXT("UCG_WeaponComponent::AttachWeaponToHand - Hand tag isn't valid!"))
-	}
-}
-
-TObjectPtr<ACG_Weapon> UCG_WeaponComponent::GetWeaponInHand(const FGameplayTag HandTag)
-{
-	if (OwningCharacter == nullptr)
-	{
-		UE_LOG(LogWeaponComponent, Error, TEXT("[%hs] - OwningCharacter isn't valid!"), __FUNCTION__);
-		return nullptr;
-	}
-	
 	if (HandTag == CG_GameplayTags::CG_WeaponHand_Right && IsValid(RightWeapon))
 	{
 		return  RightWeapon;

@@ -30,8 +30,5 @@ class CLOSEDGROUNDS_API UCG_CheatManager : public UCheatManager
 	void ForceGarbageCollection();
 	
 	UFUNCTION(Exec, BlueprintCallable)
-	void Suicide();
-	
-	UFUNCTION(Exec, BlueprintCallable)
 	void ForceSaveGame();
 };

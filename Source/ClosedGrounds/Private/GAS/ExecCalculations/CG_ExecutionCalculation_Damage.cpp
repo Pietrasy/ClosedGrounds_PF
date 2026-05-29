@@ -21,6 +21,10 @@ void UCG_ExecutionCalculation_Damage::Execute_Implementation(
 	
 	const FGameplayEffectSpec& Spec = ExecutionParams.GetOwningSpec();
 	
+	FGameplayTag DamageTag = FGameplayTag(CG_GASGameplayTags::GAS_Data_Damage);
+	float RawDamage = Spec.GetSetByCallerMagnitude(DamageTag, false, 0.f);
+	
+	
 	UAbilitySystemComponent* TargetASC = ExecutionParams.GetTargetAbilitySystemComponent();
 	UAbilitySystemComponent* SourceASC = ExecutionParams.GetSourceAbilitySystemComponent();
 	
@@ -33,6 +37,11 @@ void UCG_ExecutionCalculation_Damage::Execute_Implementation(
 	
 	ExecutionParams.AttemptCalculateCapturedAttributeMagnitude(DamageStatics().CritChanceDef, EvaluateParameters, CritChanceAttributeValue);
 	ExecutionParams.AttemptCalculateCapturedAttributeMagnitude(DamageStatics().DamageDef, EvaluateParameters, DamageAttributeValue);
+	
+	if (RawDamage > 0.f)
+	{
+		DamageAttributeValue = RawDamage;
+	}
 
 	if (FMath::FRand() <= CritChance)
 	{

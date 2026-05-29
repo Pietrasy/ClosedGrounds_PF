@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "FCG_QuestObjective.h"
+#include "FCG_ObjectiveState.h"
 #include "Data/ECG_Region.h"
 #include "Engine/DataAsset.h"
 #include "CG_QuestData.generated.h"
@@ -23,7 +23,7 @@ public:
 	FName QuestName;
 	
 	UPROPERTY(BlueprintReadOnly, EditDefaultsOnly)
-	TArray<FCG_QuestObjective> QuestObjectives;
+	TArray<FCG_ObjectiveState> QuestObjectives;
 	
 	UPROPERTY(BlueprintReadOnly, EditDefaultsOnly)
 	ERegion QuestRegion = ERegion::Null;

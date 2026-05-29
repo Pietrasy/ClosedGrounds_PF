@@ -47,7 +47,6 @@ void ACG_CharacterBase::PossessedBy(AController* NewController)
 	
 	const UCG_CharacterAttributeSet* const MovementAttributeSet = AbilitySystemComponent->GetSet<UCG_CharacterAttributeSet>();
 	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(MovementAttributeSet->GetMovementSpeedAttribute()).AddUObject(this, &ACG_CharacterBase::OnMovementSpeedChanged);
-	WeaponComponent->StartSetupWeapon();
 }
 
 void ACG_CharacterBase::OnDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount)

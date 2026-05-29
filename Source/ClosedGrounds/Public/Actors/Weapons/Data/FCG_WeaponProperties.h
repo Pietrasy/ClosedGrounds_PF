@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "GameplayTagContainer.h"
+#include "Data/ECG_WeaponType.h"
 
 #include "FCG_WeaponProperties.generated.h"
 
@@ -12,15 +13,11 @@ struct FCG_WeaponProperties
 	GENERATED_BODY()
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-	TObjectPtr<UStaticMesh> WeaponMesh = nullptr;
+	EWeaponType WeaponType = EWeaponType::OneHanded;
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-	TArray<FCG_WeaponEffect> WeaponEffects = {};
+	TArray<FCG_WeaponEffect> GameplayEffects = {};
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	TArray<TSubclassOf<UCG_GameplayAbility>> Abilities = {};
-
-	// Gameplay tag to specify a hand in which the weapon is held.
-	UPROPERTY(BlueprintReadOnly)
-	FGameplayTag HandTag = FGameplayTag::EmptyTag;
 };

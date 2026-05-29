@@ -20,7 +20,6 @@ void UCG_CheatManager::StartNewDay()
 void UCG_CheatManager::FinishDay()
 {
 	UCG_GameInstance* GI = Cast<UCG_GameInstance>(UGameplayStatics::GetGameInstance(GetWorld()));
-	GI->GetSubsystem<UCG_QuestManager>()->CompleteDay();
 }
 
 void UCG_CheatManager::ForceCrash()
@@ -38,12 +37,6 @@ void UCG_CheatManager::SetWalkSpeed(float InWalkSpeed)
 void UCG_CheatManager::ForceGarbageCollection()
 {
 	GEngine->ForceGarbageCollection();
-}
-
-void UCG_CheatManager::Suicide()
-{
-	ACG_GameMode* GameMode = Cast<ACG_GameMode>(GetWorld()->GetAuthGameMode());
-	GameMode->HandlePlayerDeath();
 }
 
 void UCG_CheatManager::ForceSaveGame()

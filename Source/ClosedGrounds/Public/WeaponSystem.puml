@@ -1,0 +1,91 @@
+﻿@startuml
+
+@startuml
+
+' ======================
+' CORE CLASSES
+' ======================
+
+class UCG_WeaponComponent {
+    - OwningCharacter : ACG_CharacterBase
+    - Weapons : TArray<ACG_Weapon>
+    - RightWeapon : ACG_Weapon
+    - LeftWeapon : ACG_Weapon
+    + AddWeapons()
+    + StartHitDetection()
+    + EndHitDetection()
+}
+
+class ACG_Weapon {
+    - WeaponOwner : ACharacter
+    - Parameters : FCG_WeaponParameters
+    - Properties : FCG_WeaponProperties
+    - HitPawns : TSet<APawn>
+    + SetupWeapon()
+    + StartHitDetection()
+    + EndHitDirection()
+}
+
+class UCG_PDA_Weapon {
+    + Properties : FCG_WeaponProperties
+    + Parameters : FCG_WeaponParameters
+}
+
+' ======================
+' DATA STRUCTS
+' ======================
+
+struct FCG_WeaponProperties {
+    WeaponMesh
+    WeaponEffects
+    Abilities
+    HandTag
+}
+
+struct FCG_WeaponParameters {
+    Damage
+    AttackSpeed
+    CritChance
+}
+
+' ======================
+' GAMEPLAY / UE
+' ======================
+
+class ACG_CharacterBase
+class APawn
+class UGameplayEffect
+class AbilitySystemComponent
+
+' ======================
+' RELATIONS
+' ======================
+
+' Component ownership
+ACG_CharacterBase *-- UCG_WeaponComponent
+
+' Component manages weapons
+UCG_WeaponComponent --> ACG_Weapon : spawns / owns
+
+' Weapon knows owner
+ACG_Weapon --> ACG_CharacterBase : owner
+
+' Data flow
+UCG_WeaponComponent --> UCG_PDA_Weapon : input data
+ACG_Weapon --> UCG_PDA_Weapon : setup from
+
+' Struct usage
+UCG_PDA_Weapon --> FCG_WeaponProperties
+UCG_PDA_Weapon --> FCG_WeaponParameters
+
+ACG_Weapon --> FCG_WeaponProperties
+ACG_Weapon --> FCG_WeaponParameters
+
+' Combat
+ACG_Weapon --> APawn : hits
+ACG_Weapon ..> AbilitySystemComponent : applies effects
+ACG_Weapon --> UGameplayEffect
+
+@enduml
+
+@enduml

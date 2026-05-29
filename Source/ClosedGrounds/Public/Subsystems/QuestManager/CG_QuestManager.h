@@ -3,79 +3,60 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Data/ECG_Region.h"
-#include "Data/FCG_ActiveQuest.h"
-#include "Subsystems/SaveManager/Data/FCG_QuestSaveData.h"
+#include "Data/FCG_QuestState.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "CG_QuestManager.generated.h"
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnFinishedAllQuestsDynamic);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnFinishedTodayQuests);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnLoadedAllQuests);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnQuestSystemReady);
+DECLARE_DELEGATE(FOnActivatedTodayQuests);
+
+struct FObjectiveHandle
+{
+	int32 QuestIndex;
+	int32 ObjectiveIndex;
+};
 
 class UCG_QuestData;
-/**
- * 
- */
+
 UCLASS()
 class CLOSEDGROUNDS_API UCG_QuestManager : public UGameInstanceSubsystem
 {
 	GENERATED_BODY()
-	
+
 public:
 	void InitializeQuestSystem();
 	
 	UPROPERTY(BlueprintAssignable)
-	FOnQuestSystemReady OnQuestSystemReady;
+	FOnFinishedTodayQuests OnFinishedTodayQuests;
+	FOnActivatedTodayQuests OnActivatedTodayQuests;
 	
-	UPROPERTY(BlueprintAssignable)
-	FOnFinishedAllQuestsDynamic OnFinishedAllQuests;
-	UPROPERTY(BlueprintAssignable)
-	FOnFinishedAllQuestsDynamic FOnLoadedAllQuests;
+	bool CheckTodayQuestsStatus();
 	
-	UPROPERTY(BlueprintReadOnly, EditDefaultsOnly)
-	TArray<TObjectPtr<UCG_QuestData>> RemainingQuests;
+	void CompleteQuest(FCG_QuestState& InQuest);
 	
-	UPROPERTY(BlueprintReadOnly, EditDefaultsOnly)
-	TArray<FCG_ActiveQuest> ActiveQuests;
+	bool AreQuestsLoaded() const;
 	
-	TMap<FGameplayTag, TArray<FCG_QuestObjective*>> ObjectivesByTag;
+	void SetNumQuestsPerDay(const int32 InNumberQuests);
 	
 	UFUNCTION(BlueprintCallable)
-	void DrawQuests();
-	
-	void ActivateQuests(UCG_QuestData* QuestData);
-	void RegisterObjectives(FCG_ActiveQuest& Quest);
-	void UnregisterObjectives(FCG_ActiveQuest& Quest);
+	void UpdateObjective(const FGameplayTag InObjectiveTag);
+
+	UFUNCTION(BlueprintCallable)
+	const TArray<FCG_QuestState>& GetTodayQuests() const;
 	
 	UFUNCTION(BlueprintCallable)
-	void NotifyObjective(FGameplayTag QuestTag);
-	
-	TSet<ERegion> UsedRegions;
-	
-	void ClearActiveQuests();
-	
-	void CompleteQuest(FCG_ActiveQuest& Quest);
-	
-	FCG_QuestSaveData GetQuestSaveData();
-	void LoadQuestSaveData(FCG_QuestSaveData& SaveData);
-	
-	void SetQuestObject();
-	
-	void CompleteDay();
-	
-	TSet<FGameplayTag> GetActiveObjectiveTags();
+	FGameplayTagContainer GetTodayQuestsTags();
 	
 private:
-	UPROPERTY(EditDefaultsOnly)
-	TArray<FCG_ActiveQuest> Quests;
+	TArray<TObjectPtr<UCG_QuestData>> AllQuests;
+	TArray<FCG_QuestState> TodayQuests;
+	bool bQuestLoaded = false;
+	int32 NumQuestsToRoll = 2;
+	TMap<const FGameplayTag, FObjectiveHandle> ObjectivesHandles;
 	
-	void OnAssetsLoaded();
-	
-	TArray<FPrimaryAssetId> QuestAssetIds;
-	
-	UPROPERTY()
-	TArray<UCG_QuestData*> LoadedQuests;
-	
-	void AddQuest(UCG_QuestData* Quest);
+	void ActivateQuest(const UCG_QuestData* InQuest);
+	void RollQuests();
+	void CacheLoadedQuests();
 };

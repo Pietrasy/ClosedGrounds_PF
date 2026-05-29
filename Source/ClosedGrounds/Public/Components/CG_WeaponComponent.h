@@ -9,7 +9,7 @@
 
 class UGameplayEffect;
 class UCG_PDA_Weapon;
-class ACG_Weapon;
+class ACG_WeaponBase;
 class UCG_WeaponData;
 class ACG_CharacterBase;
 
@@ -17,69 +17,52 @@ UCLASS(Blueprintable, BlueprintType)
 class CLOSEDGROUNDS_API UCG_WeaponComponent : public UActorComponent
 {
 	GENERATED_BODY()
-
+	
 public:
 	virtual void BeginPlay() override;
 	
-	void StartSetupWeapon();
+	/**
+	 * @brief Create a weapon actor if one doesn't already exist and populates it with data.
+	 * @param InWeaponData Weapon data.
+	 */
+	void AddWeaponToOwner(UCG_PDA_Weapon* InWeaponData);
+
+	/**
+	 * @brief Spawns a weapon actor.
+	 * @return Weapon actor with Owner and Instigator set to OwningCharacter.
+	 */
+	ACG_WeaponBase* SpawnWeapon();
 	
 	UFUNCTION(BlueprintCallable)
-	void SetNewWeapon(UCG_PDA_Weapon* WeaponData);
+	TArray<ACG_WeaponBase*> GetWeapons();
 	
-	// Reference to owner this component.
+	void RemoveWeapons();
+	
+	// Methods that are endpoints for calls from an AnimWeaponNotifyState.
+	void StartHitDetection(FGameplayTag HandTag);
+	void EndHitDetection(FGameplayTag HandTag);
+
+public:
+	// Reference to the owner this component.
 	UPROPERTY(BlueprintReadOnly)
 	TObjectPtr<ACG_CharacterBase> OwningCharacter = nullptr;
-	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-	TSubclassOf<UGameplayEffect> DefaultHitEffect;
-
 	// Members for weapon on each hand.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Weapons")
-	TSubclassOf<UCG_WeaponData> RightWeaponData = nullptr;
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Weapons")
-	TSubclassOf<UCG_WeaponData> LeftWeaponData = nullptr;
-	
-	// Members for weapon on each hand.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Weapons")
-	TObjectPtr<UCG_PDA_Weapon> RightWeaponDataSTRUCT = nullptr;
-
-	UPROPERTY(BlueprintReadOnly)
-	TArray<TObjectPtr<ACG_Weapon>> Weapons = {};
+	TObjectPtr<UCG_PDA_Weapon> WeaponData = nullptr;
 	
 	// Flag to enable draw debug hit boxes on a weapon. 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="WeaponComponent|Debug")
 	bool bDrawDebugHitBox = false;
 
-	// TSet is like a TArray but stores unique elements only. 
-	TSet<TWeakObjectPtr<APawn>> HitPawns;
-
-	// This method should be called from the editor when a character is given weapons. This starts the logic to assign weapons to the WeaponComponent.
-	UFUNCTION(BlueprintCallable)
-	void AddWeapons();
-
-	// Methods that are endpoints for calls from an AnimWeaponNotifyState.
-	void StartHitDetection(FGameplayTag HandTag);
-	void EndHitDetection(FGameplayTag HandTag);
-	
 private:
-	// Cache reference to character owner this component.
-	void CacheCharacterOwner();
-	
-	// Actors represent the weapons assigned to the WeaponComponent.
 	UPROPERTY()
-	TObjectPtr<ACG_Weapon> RightWeapon = nullptr;
+	TObjectPtr<ACG_WeaponBase> RightWeapon;
 	UPROPERTY()
-	TObjectPtr<ACG_Weapon> LeftWeapon = nullptr;
+	TObjectPtr<ACG_WeaponBase> LeftWeapon;
 	
 	FName RightWeaponSocket = "Weapon_R";
 	FName LeftWeaponSocket = "Weapon_L";
-
-	// Create an ACG_WeaponActor based on the data from an UCG_Weapon object.
-	TObjectPtr<ACG_Weapon> SpawnWeapon(TObjectPtr<UCG_PDA_Weapon> WeaponData);
-
-	// Attach spawned an ACG_WeaponActor to a character mesh. 
-	void AttachWeaponToHand(ACG_Weapon* WeaponActor) const;
 	
 	// Return an ACG_WeaponActor in the given hand.
-	TObjectPtr<ACG_Weapon> GetWeaponInHand(FGameplayTag HandTag);
+	TObjectPtr<ACG_WeaponBase> GetWeaponInHand(FGameplayTag HandTag);
 };

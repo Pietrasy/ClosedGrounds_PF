@@ -4,54 +4,43 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameModeBase.h"
+#include "Interfaces/CG_DayManagerInterface.h"
 #include "CG_GameMode.generated.h"
 
-/**
- * 
- */
-
+class UCG_DayManagerComponent;
 class UCG_QuestManager;
-class UCG_DayManager;
 
-DECLARE_MULTICAST_DELEGATE(FOnStartGame)
-DECLARE_MULTICAST_DELEGATE(FOnFinishDay)
+DECLARE_MULTICAST_DELEGATE(FOnStartGame);
 
 UCLASS()
-class CLOSEDGROUNDS_API ACG_GameMode : public AGameModeBase
+class CLOSEDGROUNDS_API ACG_GameMode : public AGameModeBase, public ICG_DayManagerInterface
 {
 	GENERATED_BODY()
 
 public:
-	// POCZATEK ISTNIENIA
+	FOnStartGame OnStartGame;
+	
+	UFUNCTION(BlueprintNativeEvent)
+	void StartGame();
+	
+	ACG_GameMode();
+	
 	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
 	
-	// ODPALA SIE Z INNYMI NIE GWARARNTUJE PIERWSZENSTWA
-	virtual void BeginPlay() override;
+	//~~Begin ICG_DayManagerInterface
+	virtual void RegisterSpawner(ACG_GameplayActor* InEnemySpawner) override;
+	//~~End ICG_DayManagerInterface
 	
-	// ODPALA SIE PO WSZYSTKICH BEGIN PLAY ACTOROW
-	virtual void StartPlay() override;
+	UCG_QuestManager* GetQuestManager() const;
+	UCG_DayManagerComponent* GetDayManager() const;
 	
-	UFUNCTION(BlueprintCallable)
-	void StartDay();
-	void FinishDay();
-	
-	UFUNCTION(BlueprintCallable, BlueprintNativeEvent)
-	void HandlePlayerDeath();
-	
-	UFUNCTION()
-	void HandleLoadGame();
-	
-	FOnStartGame OnStartGame;
-	FOnFinishDay OnFinishDay;
-	
-	UPROPERTY(EditDefaultsOnly)
-	TArray<TObjectPtr<UMaterialInstance>> CloudsMaterials;
+protected:
+	UPROPERTY(BlueprintReadOnly)
+	TObjectPtr<UCG_DayManagerComponent> DayManagerComponent;
 	
 private:
 	UPROPERTY()
-	TObjectPtr<UCG_DayManager> DayManagerSubsystem;
-	UPROPERTY()
-	TObjectPtr<UCG_QuestManager> QuestManagerSubsystem;
+	TObjectPtr<UCG_QuestManager> QuestManager;
 	
 	
 };
